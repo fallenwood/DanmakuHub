@@ -1,0 +1,14 @@
+﻿{
+  "profiles": {
+    "http": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "http://localhost:5112",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "DANMAKUHUB_ALLOWED_LINKS": "https://ever17-my.sharepoint.com/personal/ustcbangumi_ever17_onmicrosoft_com/_layouts/15/download.aspx"
+      }
+    }
+  }
+}
