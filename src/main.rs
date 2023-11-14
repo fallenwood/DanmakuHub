@@ -2,7 +2,7 @@ use axum::extract::State;
 use axum::Json;
 use mimalloc::MiMalloc;
 
-use axum::http::Method;
+use axum::http::{Method, HeaderMap};
 use axum::{
   extract::Query,
   http::{HeaderValue, StatusCode},
@@ -11,11 +11,11 @@ use axum::{
   Router,
 };
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
 use std::collections::HashSet;
 use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 
 #[derive(Deserialize)]
@@ -26,8 +26,10 @@ pub struct GetMd5Request {
 
 #[derive(Serialize)]
 pub struct GetMd5Response {
-  pub hash: String,
+  pub hash: String
 }
+
+const VISITS_HEADER_KEY: &str = "X-DANMAKUHUB-VISITS";
 
 // TODO: split state to immutable & mutable ones to avoid frequently acuire lock
 #[derive(Clone)]
@@ -56,7 +58,7 @@ fn create_app() -> Router {
     .map(|s| HeaderValue::from_str(s).unwrap())
     .collect();
 
-    let setup_dbpath = dbpath.clone();
+  let setup_dbpath = dbpath.clone();
 
   let state = Arc::new(RwLock::new(AppState {
     dbpath,
@@ -106,7 +108,12 @@ fn setup_db(dbpath: &str) {
   let query = "create table if not exists Hashes(
     Id INTEGER PRIMARY KEY AUTOINCREMENT,
     Filename VARCHAR(1024) NOT NULL UNIQUE,
-    Hash VARCHAR(1024) NOT NULL)
+    Hash VARCHAR(1024) NOT NULL);
+    create table if not exists Visits(
+      Id INTEGER PRIMARY KEY AUTOINCREMENT,
+      Filename VARCHAR(1024) NOT NULL UNIQUE,
+      Visits INTEGER NOT NULL DEFAULT 1
+    );
   ";
 
   connection.execute(query).unwrap();
@@ -127,6 +134,40 @@ fn insert_db(dbpath: &str, filename: &str, hash: &str) -> Option<sqlite::Error> 
   statement.bind((3, hash)).unwrap();
 
   statement.next().err()
+}
+
+fn update_visits(dbpath: &str, filename: &str) -> Result<i64, sqlite::Error> {
+  let connection = sqlite::open(dbpath).unwrap();
+
+  {
+    let query = "insert into Visits (Filename)
+    values (?)
+    on conflict (Filename) do
+    update set Visits = Visits+1;";
+    let mut statement = connection.prepare(query).unwrap();
+    statement.bind((1, filename)).unwrap();
+
+    let next = statement.next();
+
+    if next.is_err() {
+      return Err(next.err().unwrap());
+    }
+  }
+
+  {
+    let query = "select visits from Visits where Filename=? limit 1";
+    let mut statement = connection.prepare(query).unwrap();
+    statement.bind((1, filename)).unwrap();
+
+    let next = statement.next();
+    if let Ok(state) = next {
+      if state == sqlite::State::Row {
+        return statement.read::<i64, usize>(0);
+      }
+    }
+
+    return Err(next.err().unwrap());
+  }
 }
 
 fn query_db(dbpath: &str, filename: &str) -> Option<String> {
@@ -186,19 +227,32 @@ async fn handle_md5_request(
 ) -> axum::response::Response {
   let dbpath = state.read().await.dbpath.clone();
 
+  let mut headers = HeaderMap::new();
+  let visits = update_visits(dbpath.as_str(), filename.as_str()).unwrap_or(-1);
+  headers.insert(VISITS_HEADER_KEY, visits.to_string().parse().unwrap());
+
   if let Some(hash) = query_db(dbpath.as_str(), filename.as_str()) {
     let response = GetMd5Response { hash };
-    return Json(response).into_response();
+    return (headers, Json(response)).into_response();
   }
 
   if run_background_fetch {
     let _ = tokio::spawn(async move {
-      if state.read().await.processing_files.contains(filename.as_str()) {
+      if state
+        .read()
+        .await
+        .processing_files
+        .contains(filename.as_str())
+      {
         tracing::info!("skip processing file {}", filename);
         return;
       }
 
-      state.write().await.processing_files.insert(filename.clone());
+      state
+        .write()
+        .await
+        .processing_files
+        .insert(filename.clone());
 
       let Some(md5) = download_16m(link.as_str()).await else {
         tracing::error!("failed to download md5 for {}", filename);
@@ -213,7 +267,7 @@ async fn handle_md5_request(
     });
   }
 
-  StatusCode::NOT_FOUND.into_response()
+  (headers, StatusCode::NOT_FOUND).into_response()
 }
 
 async fn get_md5(
