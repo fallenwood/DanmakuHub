@@ -1,16 +1,16 @@
-use axum::extract::State;
-use axum::Json;
+mod db;
+mod service;
+mod md5_handler;
+mod visit_handler;
+
 use mimalloc::MiMalloc;
 
-use axum::http::{Method, HeaderMap};
+use axum::http::Method;
 use axum::{
-  extract::Query,
   http::{HeaderValue, StatusCode},
-  response::IntoResponse,
   routing::{get, post},
   Router,
 };
-use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::env;
 use std::net::SocketAddr;
@@ -18,28 +18,19 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 
-#[derive(Deserialize)]
-pub struct GetMd5Request {
-  pub link: Option<String>,
-  pub filename: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct GetMd5Response {
-  pub hash: String
-}
-
-const VISITS_HEADER_KEY: &str = "X-DANMAKUHUB-VISITS";
+use db::setup_db;
+use md5_handler::{get_md5, post_md5};
+use visit_handler::post_visit;
 
 // TODO: split state to immutable & mutable ones to avoid frequently acuire lock
 #[derive(Clone)]
-struct AppState {
+pub struct AppState {
   dbpath: String,
   allowed_hosts: Vec<String>,
   processing_files: HashSet<String>,
 }
 
-type SharedState = Arc<RwLock<AppState>>;
+pub type SharedState = Arc<RwLock<AppState>>;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -73,6 +64,7 @@ fn create_app() -> Router {
   let app = Router::new()
     .route("/danmakuhub/md5", post(post_md5))
     .route("/danmakuhub/md5", get(get_md5))
+    .route("/danmakuhub/visit", post(post_visit))
     .layer(cors)
     .route("/healthz", get(health))
     .route("/danmakuhub/healthz", get(health))
@@ -100,204 +92,4 @@ async fn main() {
 
 pub async fn health() -> StatusCode {
   StatusCode::OK
-}
-
-fn setup_db(dbpath: &str) {
-  let connection = sqlite::open(dbpath).unwrap();
-
-  let query = "create table if not exists Hashes(
-    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-    Filename VARCHAR(1024) NOT NULL UNIQUE,
-    Hash VARCHAR(1024) NOT NULL);
-    create table if not exists Visits(
-      Id INTEGER PRIMARY KEY AUTOINCREMENT,
-      Filename VARCHAR(1024) NOT NULL UNIQUE,
-      Visits INTEGER NOT NULL DEFAULT 1
-    );
-  ";
-
-  connection.execute(query).unwrap();
-
-  tracing::info!("db setup done");
-}
-
-fn insert_db(dbpath: &str, filename: &str, hash: &str) -> Option<sqlite::Error> {
-  let connection = sqlite::open(dbpath).unwrap();
-
-  let query = "insert into Hashes (Filename, Hash)
-  values (?, ?)
-  on conflict (Filename) do
-  update set Hash = ?;";
-  let mut statement = connection.prepare(query).unwrap();
-  statement.bind((1, filename)).unwrap();
-  statement.bind((2, hash)).unwrap();
-  statement.bind((3, hash)).unwrap();
-
-  statement.next().err()
-}
-
-fn update_visits(dbpath: &str, filename: &str) -> Result<i64, sqlite::Error> {
-  let connection = sqlite::open(dbpath).unwrap();
-
-  {
-    let query = "insert into Visits (Filename)
-    values (?)
-    on conflict (Filename) do
-    update set Visits = Visits+1;";
-    let mut statement = connection.prepare(query).unwrap();
-    statement.bind((1, filename)).unwrap();
-
-    let next = statement.next();
-
-    if next.is_err() {
-      return Err(next.err().unwrap());
-    }
-  }
-
-  {
-    let query = "select visits from Visits where Filename=? limit 1";
-    let mut statement = connection.prepare(query).unwrap();
-    statement.bind((1, filename)).unwrap();
-
-    let next = statement.next();
-    if let Ok(state) = next {
-      if state == sqlite::State::Row {
-        return statement.read::<i64, usize>(0);
-      }
-    }
-
-    return Err(next.err().unwrap());
-  }
-}
-
-fn query_db(dbpath: &str, filename: &str) -> Option<String> {
-  let connection = sqlite::open(dbpath).unwrap();
-
-  let query = "select hash from Hashes where Filename=? limit 1";
-  let mut statement = connection.prepare(query).unwrap();
-  statement.bind((1, filename)).unwrap();
-
-  if let Ok(state) = statement.next() {
-    if state == sqlite::State::Row {
-      if let Ok(hash) = statement.read::<String, usize>(0) {
-        return Some(hash);
-      }
-    }
-  }
-
-  None
-}
-
-async fn download_16m(link: &str) -> Option<String> {
-  let client = reqwest::Client::new();
-
-  tracing::debug!("Start download {}", link);
-
-  let resp = client
-    .get(link)
-    .header("Range", "bytes=0-16777215")
-    .send()
-    .await;
-
-  match resp {
-    Ok(resp) => {
-      tracing::debug!("Successfully download {}", link);
-
-      let body = resp.bytes().await.unwrap();
-      let md5 = md5::compute(body);
-      let md5_str = format!("{:x}", md5);
-
-      tracing::debug!("Successfully calculating md5 {}", link);
-
-      return Some(md5_str);
-    }
-
-    Err(e) => {
-      tracing::error!("download failed for {}: {}", link, e);
-      return None;
-    }
-  }
-}
-
-async fn handle_md5_request(
-  link: String,
-  filename: String,
-  state: SharedState,
-  run_background_fetch: bool,
-) -> axum::response::Response {
-  let dbpath = state.read().await.dbpath.clone();
-
-  let mut headers = HeaderMap::new();
-  let visits = update_visits(dbpath.as_str(), filename.as_str()).unwrap_or(-1);
-  headers.insert(VISITS_HEADER_KEY, visits.to_string().parse().unwrap());
-
-  if let Some(hash) = query_db(dbpath.as_str(), filename.as_str()) {
-    let response = GetMd5Response { hash };
-    return (headers, Json(response)).into_response();
-  }
-
-  if run_background_fetch {
-    let _ = tokio::spawn(async move {
-      if state
-        .read()
-        .await
-        .processing_files
-        .contains(filename.as_str())
-      {
-        tracing::info!("skip processing file {}", filename);
-        return;
-      }
-
-      state
-        .write()
-        .await
-        .processing_files
-        .insert(filename.clone());
-
-      let Some(md5) = download_16m(link.as_str()).await else {
-        tracing::error!("failed to download md5 for {}", filename);
-        return;
-      };
-
-      if let Some(err) = insert_db(dbpath.as_str(), filename.as_str(), md5.as_str()) {
-        tracing::error!("insert failed for {}: {}", filename, err);
-      } else {
-        tracing::info!("Successfully insert db for {}", filename);
-      }
-    });
-  }
-
-  (headers, StatusCode::NOT_FOUND).into_response()
-}
-
-async fn get_md5(
-  Query(query): Query<GetMd5Request>,
-  State(state): State<SharedState>,
-) -> impl IntoResponse {
-  let Some(filename) = query.filename else {
-    return StatusCode::BAD_REQUEST.into_response();
-  };
-
-  handle_md5_request("".to_string(), filename, state, false).await
-}
-
-async fn post_md5(
-  Query(query): Query<GetMd5Request>,
-  State(state): State<SharedState>,
-) -> impl IntoResponse {
-  let (Some(link), Some(filename)) = (query.link, query.filename) else {
-    return StatusCode::BAD_REQUEST.into_response();
-  };
-
-  if !state
-    .read()
-    .await
-    .allowed_hosts
-    .iter()
-    .any(|allowed| link.starts_with(allowed))
-  {
-    return StatusCode::BAD_REQUEST.into_response();
-  }
-
-  handle_md5_request(link, filename, state, true).await
 }
