@@ -1,5 +1,4 @@
-use axum::{extract::{Query, State}, response::IntoResponse, Json};
-use reqwest::StatusCode;
+use axum::{extract::{Query, State}, response::IntoResponse, Json, http::StatusCode};
 use serde::Serialize;
 
 use crate::{md5_handler::GetMd5Request, SharedState, db::update_visits};

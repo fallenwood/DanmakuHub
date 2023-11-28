@@ -80,12 +80,13 @@ async fn main() {
   env_logger::init();
 
   let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
-  let app = create_app();
+  let listener = tokio::net::TcpListener::bind(addr).await.unwrap();  let app = create_app();
 
   tracing::info!("listening on {}", addr);
 
-  axum::Server::bind(&addr)
-    .serve(app.into_make_service())
+  let service = app.into_make_service();
+
+  axum::serve(listener, service)
     .await
     .unwrap();
 }
