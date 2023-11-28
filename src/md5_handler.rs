@@ -1,5 +1,4 @@
-use axum::{Json, extract::{Query, State}, response::IntoResponse};
-use reqwest::StatusCode;
+use axum::{Json, extract::{Query, State}, response::IntoResponse, http::StatusCode};
 use serde::{Deserialize, Serialize};
 
 use crate::{SharedState, db::{query_db, insert_db}, service::download_16m};
