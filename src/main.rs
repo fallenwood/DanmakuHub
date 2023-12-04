@@ -15,7 +15,7 @@ use std::collections::HashSet;
 use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 use tower_http::cors::CorsLayer;
 
 use db::setup_db;
@@ -23,11 +23,11 @@ use md5_handler::{get_md5, post_md5};
 use visit_handler::post_visit;
 
 // TODO: split state to immutable & mutable ones to avoid frequently acuire lock
-#[derive(Clone)]
 pub struct AppState {
   dbpath: String,
   allowed_hosts: Vec<String>,
   processing_files: HashSet<String>,
+  sempahore: Semaphore,
 }
 
 pub type SharedState = Arc<RwLock<AppState>>;
@@ -43,6 +43,11 @@ fn create_app() -> Router {
     .map(|s| s.to_string())
     .collect();
 
+    let concurrent_fetch_requests = env::var("DANMAKUHUB_CONCURRENT_FETCH_REQUESTS")
+    .unwrap_or("10".to_string())
+    .parse::<usize>()
+    .unwrap_or(10);
+
   let cors_origins: Vec<HeaderValue> = env::var("DANMAKUHUB_CORS_ORIGINS")
     .unwrap_or("http://localhost:5173".to_string())
     .split(";")
@@ -55,6 +60,7 @@ fn create_app() -> Router {
     dbpath,
     allowed_hosts,
     processing_files: HashSet::new(),
+    sempahore: Semaphore::new(concurrent_fetch_requests),
   }));
 
   let cors = CorsLayer::new()
