@@ -40,6 +40,9 @@ pub async fn handle_md5_request(
         return;
       }
 
+      // Should be RAII
+      let _ = state.read().await.sempahore.acquire().await.unwrap();
+
       state
         .write()
         .await
