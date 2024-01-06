@@ -21,7 +21,6 @@ pub async fn proxy_get_dandanplay_comment(
 
     // TODO: iter all headers
     if let Some(content_type) = reqwest_response.headers().get("content-type") {
-      tracing::warn!("content-type: {}", content_type.clone().to_str().unwrap());
       headers.insert("content-type", content_type.clone().to_str().unwrap().parse().unwrap());
     }
 
