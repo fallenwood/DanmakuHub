@@ -1,4 +1,4 @@
-FROM rust:1.73.0-buster as build
+FROM rust:1.75.0-buster as build
 
 WORKDIR /usr/src/myapp
 COPY . .

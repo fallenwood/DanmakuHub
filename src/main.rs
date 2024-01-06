@@ -2,6 +2,7 @@ mod db;
 mod service;
 mod md5_handler;
 mod visit_handler;
+mod dandanplay_handler;
 
 use mimalloc::MiMalloc;
 
@@ -21,6 +22,7 @@ use tower_http::cors::CorsLayer;
 use db::setup_db;
 use md5_handler::{get_md5, post_md5};
 use visit_handler::post_visit;
+use dandanplay_handler::proxy_get_dandanplay_comment;
 
 // TODO: split state to immutable & mutable ones to avoid frequently acuire lock
 #[derive(Clone)]
@@ -65,6 +67,7 @@ fn create_app() -> Router {
     .route("/danmakuhub/md5", post(post_md5))
     .route("/danmakuhub/md5", get(get_md5))
     .route("/danmakuhub/visit", post(post_visit))
+    .route("/danmakuhub/dandanplay/comment", get(proxy_get_dandanplay_comment))
     .layer(cors)
     .route("/healthz", get(health))
     .route("/danmakuhub/healthz", get(health))
