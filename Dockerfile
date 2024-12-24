@@ -1,11 +1,11 @@
-FROM rust:1.75.0-buster as build
+FROM docker.io/rust:1.83.0-bookworm as build
 
 WORKDIR /usr/src/myapp
 COPY . .
 RUN cargo build --release
 
-FROM debian:buster-slim as runtime
-RUN apt update -y && apt install libsqlite3-0 libssl1.1 ca-certificates -y && update-ca-certificates
+FROM docker.io/debian:bookworm-slim as runtime
+RUN apt update -y && apt install libsqlite3-0 libssl3 ca-certificates -y && update-ca-certificates
 
 FROM runtime as base
 WORKDIR /app
