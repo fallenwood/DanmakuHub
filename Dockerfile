@@ -5,7 +5,7 @@ COPY . .
 RUN cargo build --release
 
 FROM docker.io/debian:bookworm-slim as runtime
-RUN apt update -y && apt install libsqlite3-0 libssl1.1 ca-certificates -y && update-ca-certificates
+RUN apt update -y && apt install libsqlite3-0 libssl3 ca-certificates -y && update-ca-certificates
 
 FROM runtime as base
 WORKDIR /app
