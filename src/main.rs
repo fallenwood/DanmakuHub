@@ -30,6 +30,8 @@ pub struct AppState {
   dbpath: String,
   allowed_hosts: Vec<String>,
   processing_files: HashSet<String>,
+  app_id: String,
+  app_secret: String,
 }
 
 pub type SharedState = Arc<RwLock<AppState>>;
@@ -53,10 +55,15 @@ fn create_app() -> Router {
 
   let setup_dbpath = dbpath.clone();
 
+  let app_id = env::var("DANMAKUHUB_DANDANPLAY_APP_ID").unwrap_or("".to_string());
+  let app_secret = env::var("DANMAKUHUB_DANDANPLAY_APP_SECRET").unwrap_or("".to_string());
+
   let state = Arc::new(RwLock::new(AppState {
     dbpath,
     allowed_hosts,
     processing_files: HashSet::new(),
+    app_id,
+    app_secret,
   }));
 
   let cors = CorsLayer::new()
