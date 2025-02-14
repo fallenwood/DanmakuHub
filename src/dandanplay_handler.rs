@@ -20,7 +20,7 @@ pub struct ProxyDandanPlayMatchRequest {
   pub match_mode: Option<String>,
 }
 
-async fn add_dandanplay_headers(headers: &mut HeaderMap, state: &SharedState) {
+async fn add_dandanplay_headers(headers: &mut reqwest::header::HeaderMap, state: &SharedState) {
   let app_id = state.read().await.app_id.clone();
   let app_secret = state.read().await.app_secret.clone();
 
@@ -36,7 +36,11 @@ pub async fn proxy_post_dandanplay_match(
   let uri = "https://api.dandanplay.net/api/v2/match";
 
   let client = reqwest::Client::new();
-  let reqwest_response = client.post(uri).json(&req).send().await.unwrap();
+
+  let mut request_headers = reqwest::header::HeaderMap::new();
+  add_dandanplay_headers(&mut request_headers, &state).await;
+
+  let reqwest_response = client.post(uri).headers(request_headers).json(&req).send().await.unwrap();
 
   tracing::info!("Response Status: {:?} for {:?}", reqwest_response.status(), uri);
 
@@ -46,7 +50,6 @@ pub async fn proxy_post_dandanplay_match(
   }
 
   headers.insert("X-Upstream-Status",  HeaderValue::from_str(reqwest_response.status().as_str()).unwrap());
-  add_dandanplay_headers(&mut headers, &state).await;
 
   let stream = reqwest_response.bytes_stream();
 
@@ -68,7 +71,11 @@ pub async fn proxy_get_dandanplay_comment(
     let uri = format!("https://api.dandanplay.net/api/v2/comment/{episode_id}?withRelated=true&chConvert=0");
 
     let client = reqwest::Client::new();
-    let reqwest_response = client.get(&uri).send().await.unwrap();
+
+    let mut request_headers = reqwest::header::HeaderMap::new();
+    add_dandanplay_headers(&mut request_headers, &state).await;
+
+    let reqwest_response = client.get(&uri).headers(request_headers).send().await.unwrap();
 
     tracing::info!("Response Status: {:?} for {:?}", reqwest_response.status(), uri);
 
@@ -78,7 +85,6 @@ pub async fn proxy_get_dandanplay_comment(
     }
 
     headers.insert("X-Upstream-Status",  HeaderValue::from_str(reqwest_response.status().as_str()).unwrap());
-    add_dandanplay_headers(&mut headers, &state).await;
 
     let stream = reqwest_response.bytes_stream();
 

@@ -3,6 +3,7 @@ mod service;
 mod md5_handler;
 mod visit_handler;
 mod dandanplay_handler;
+mod cache;
 
 use mimalloc::MiMalloc;
 
