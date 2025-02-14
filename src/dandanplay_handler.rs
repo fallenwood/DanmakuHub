@@ -38,11 +38,14 @@ pub async fn proxy_post_dandanplay_match(
   let client = reqwest::Client::new();
   let reqwest_response = client.post(uri).json(&req).send().await.unwrap();
 
+  tracing::info!("Response Status: {:?} for {:?}", reqwest_response.status(), uri);
+
   // TODO: iter all headers
   if let Some(content_type) = reqwest_response.headers().get("content-type") {
     headers.insert("content-type", content_type.clone().to_str().unwrap().parse().unwrap());
   }
 
+  headers.insert("X-Upstream-Status",  HeaderValue::from_str(reqwest_response.status().as_str()).unwrap());
   add_dandanplay_headers(&mut headers, &state).await;
 
   let stream = reqwest_response.bytes_stream();
@@ -67,11 +70,14 @@ pub async fn proxy_get_dandanplay_comment(
     let client = reqwest::Client::new();
     let reqwest_response = client.get(&uri).send().await.unwrap();
 
+    tracing::info!("Response Status: {:?} for {:?}", reqwest_response.status(), uri);
+
     // TODO: iter all headers
     if let Some(content_type) = reqwest_response.headers().get("content-type") {
       headers.insert("content-type", content_type.clone().to_str().unwrap().parse().unwrap());
     }
 
+    headers.insert("X-Upstream-Status",  HeaderValue::from_str(reqwest_response.status().as_str()).unwrap());
     add_dandanplay_headers(&mut headers, &state).await;
 
     let stream = reqwest_response.bytes_stream();
