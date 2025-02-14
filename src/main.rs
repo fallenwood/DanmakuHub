@@ -13,6 +13,8 @@ use axum::{
   routing::{get, post},
   Router,
 };
+use tower::ServiceBuilder;
+use tower_http::compression::CompressionLayer;
 use std::collections::HashSet;
 use std::env;
 use std::net::SocketAddr;
@@ -80,7 +82,8 @@ fn create_app() -> Router {
     .layer(cors)
     .route("/healthz", get(health))
     .route("/danmakuhub/healthz", get(health))
-    .with_state(Arc::clone(&state));
+    .with_state(Arc::clone(&state))
+    .layer(CompressionLayer::new());
 
   setup_db(setup_dbpath.as_str());
 
