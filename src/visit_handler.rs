@@ -1,8 +1,12 @@
-use axum::{extract::{Query, State}, response::IntoResponse, Json, http::StatusCode};
+use axum::{
+  Json,
+  extract::{Query, State},
+  http::StatusCode,
+  response::IntoResponse,
+};
 use serde::Serialize;
 
-use crate::{md5_handler::GetMd5Request, SharedState, db::update_visits};
-
+use crate::{SharedState, db::update_visits, md5_handler::GetMd5Request};
 
 #[derive(Serialize)]
 pub struct GetVisitResponse {

@@ -1,8 +1,16 @@
-use axum::{Json, extract::{Query, State}, response::IntoResponse, http::StatusCode};
+use axum::{
+  Json,
+  extract::{Query, State},
+  http::StatusCode,
+  response::IntoResponse,
+};
 use serde::{Deserialize, Serialize};
 
-use crate::{SharedState, db::{query_db, insert_db}, service::download_16m};
-
+use crate::{
+  SharedState,
+  db::{insert_db, query_db},
+  service::download_16m,
+};
 
 #[derive(Deserialize)]
 pub struct GetMd5Request {

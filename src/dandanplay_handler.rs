@@ -1,4 +1,9 @@
-use axum::{body::Body, extract::{Json, Query, State}, http::{HeaderMap, HeaderValue, StatusCode}, response::IntoResponse};
+use axum::{
+  body::Body,
+  extract::{Json, Query, State},
+  http::{HeaderMap, HeaderValue, StatusCode},
+  response::IntoResponse,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::SharedState;
@@ -40,23 +45,36 @@ pub async fn proxy_post_dandanplay_match(
   let mut request_headers = reqwest::header::HeaderMap::new();
   add_dandanplay_headers(&mut request_headers, &state).await;
 
-  let reqwest_response = client.post(uri).headers(request_headers).json(&req).send().await.unwrap();
+  let reqwest_response = client
+    .post(uri)
+    .headers(request_headers)
+    .json(&req)
+    .send()
+    .await
+    .unwrap();
 
-  tracing::info!("Response Status: {:?} for {:?}", reqwest_response.status(), uri);
+  tracing::info!(
+    "Response Status: {:?} for {:?}",
+    reqwest_response.status(),
+    uri
+  );
 
   // TODO: iter all headers
   if let Some(content_type) = reqwest_response.headers().get("content-type") {
-    headers.insert("content-type", content_type.clone().to_str().unwrap().parse().unwrap());
+    headers.insert(
+      "content-type",
+      content_type.clone().to_str().unwrap().parse().unwrap(),
+    );
   }
 
-  headers.insert("X-Upstream-Status",  HeaderValue::from_str(reqwest_response.status().as_str()).unwrap());
+  headers.insert(
+    "X-Upstream-Status",
+    HeaderValue::from_str(reqwest_response.status().as_str()).unwrap(),
+  );
 
   let stream = reqwest_response.bytes_stream();
 
-  return (
-    StatusCode::OK,
-    headers,
-    Body::from_stream(stream));
+  return (StatusCode::OK, headers, Body::from_stream(stream));
 }
 
 pub async fn proxy_get_dandanplay_comment(
@@ -68,34 +86,45 @@ pub async fn proxy_get_dandanplay_comment(
   let mut headers = HeaderMap::new();
 
   if let Some(episode_id) = query.episode_id {
-    let uri = format!("https://api.dandanplay.net/api/v2/comment/{episode_id}?withRelated=true&chConvert=0");
+    let uri = format!(
+      "https://api.dandanplay.net/api/v2/comment/{episode_id}?withRelated=true&chConvert=0"
+    );
 
     let client = reqwest::Client::new();
 
     let mut request_headers = reqwest::header::HeaderMap::new();
     add_dandanplay_headers(&mut request_headers, &state).await;
 
-    let reqwest_response = client.get(&uri).headers(request_headers).send().await.unwrap();
+    let reqwest_response = client
+      .get(&uri)
+      .headers(request_headers)
+      .send()
+      .await
+      .unwrap();
 
-    tracing::info!("Response Status: {:?} for {:?}", reqwest_response.status(), uri);
+    tracing::info!(
+      "Response Status: {:?} for {:?}",
+      reqwest_response.status(),
+      uri
+    );
 
     // TODO: iter all headers
     if let Some(content_type) = reqwest_response.headers().get("content-type") {
-      headers.insert("content-type", content_type.clone().to_str().unwrap().parse().unwrap());
+      headers.insert(
+        "content-type",
+        content_type.clone().to_str().unwrap().parse().unwrap(),
+      );
     }
 
-    headers.insert("X-Upstream-Status",  HeaderValue::from_str(reqwest_response.status().as_str()).unwrap());
+    headers.insert(
+      "X-Upstream-Status",
+      HeaderValue::from_str(reqwest_response.status().as_str()).unwrap(),
+    );
 
     let stream = reqwest_response.bytes_stream();
 
-    return (
-      StatusCode::OK,
-      headers,
-      Body::from_stream(stream));
+    return (StatusCode::OK, headers, Body::from_stream(stream));
   } else {
-    return (
-      StatusCode::BAD_REQUEST,
-      headers,
-      Body::from(""));
+    return (StatusCode::BAD_REQUEST, headers, Body::from(""));
   }
 }
