@@ -1,8 +1,5 @@
 use axum::{
-  Json,
-  extract::{Query, State},
-  http::StatusCode,
-  response::IntoResponse,
+  Json, extract::{Query, State}, http::{HeaderMap, StatusCode}, response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +23,8 @@ pub struct GetMd5Response {
 pub async fn handle_md5_request(
   link: String,
   filename: String,
+  cookie: Option<String>,
+  authorization: Option<String>,
   state: SharedState,
   run_background_fetch: bool,
 ) -> axum::response::Response {
@@ -54,7 +53,7 @@ pub async fn handle_md5_request(
         .processing_files
         .insert(filename.clone());
 
-      let Some(md5) = download_16m(link.as_str()).await else {
+      let Some(md5) = download_16m(link.as_str(), cookie, authorization).await else {
         tracing::error!("failed to download md5 for {}", filename);
         return;
       };
@@ -78,11 +77,12 @@ pub async fn get_md5(
     return StatusCode::BAD_REQUEST.into_response();
   };
 
-  handle_md5_request("".to_string(), filename, state, false).await
+  handle_md5_request("".to_string(), filename, None, None, state, false).await
 }
 
 pub async fn post_md5(
   Query(query): Query<GetMd5Request>,
+  headers: HeaderMap,
   State(state): State<SharedState>,
 ) -> impl IntoResponse {
   let (Some(link), Some(filename)) = (query.link, query.filename) else {
@@ -99,5 +99,15 @@ pub async fn post_md5(
     return StatusCode::BAD_REQUEST.into_response();
   }
 
-  handle_md5_request(link, filename, state, true).await
+  let cookie = headers
+    .get("cookie")
+    .and_then(|value| value.to_str().ok())
+    .map(|s| s.to_string());
+
+  let authorization = headers
+    .get("authorization")
+    .and_then(|value| value.to_str().ok())
+    .map(|s| s.to_string());
+
+  handle_md5_request(link, filename, cookie, authorization, state, true).await
 }
