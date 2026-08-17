@@ -1,13 +1,21 @@
-pub async fn download_16m(link: &str) -> Option<String> {
+pub async fn download_16m(link: &str, cookie: Option<String>, authorization: Option<String>) -> Option<String> {
   let client = reqwest::Client::new();
 
   tracing::debug!("Start download {}", link);
 
-  let resp = client
+  let mut request = client
     .get(link)
-    .header("Range", "bytes=0-16777215")
-    .send()
-    .await;
+    .header("Range", "bytes=0-16777215");
+
+  if let Some(cookie) = cookie {
+    request = request.header("Cookie", cookie);
+  }
+
+  if let Some(authorization) = authorization {
+    request = request.header("Authorization", authorization );
+  }
+
+  let resp = request.send().await;
 
   match resp {
     Ok(resp) => {
