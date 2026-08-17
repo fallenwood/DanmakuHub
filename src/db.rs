@@ -1,6 +1,9 @@
 pub fn setup_db(dbpath: &str) {
   let connection = sqlite::open(dbpath).unwrap();
 
+  connection.execute("PRAGMA journal_mode = WAL;").unwrap();
+  connection.execute("PRAGMA synchronous = NORMAL;").unwrap();
+
   let query = "create table if not exists Hashes(
     Id INTEGER PRIMARY KEY AUTOINCREMENT,
     Filename VARCHAR(1024) NOT NULL UNIQUE,
@@ -82,4 +85,35 @@ pub fn query_db(dbpath: &str, filename: &str) -> Option<String> {
   }
 
   None
+}
+
+#[cfg(test)]
+mod tests {
+  use std::{fs, time::{SystemTime, UNIX_EPOCH}};
+
+  use super::setup_db;
+
+  #[test]
+  fn setup_db_enables_wal() {
+    let unique = SystemTime::now()
+      .duration_since(UNIX_EPOCH)
+      .unwrap()
+      .as_nanos();
+    let dbpath = format!("{}\\danmakuhub_wal_test_{}.sqlite", std::env::temp_dir().display(), unique);
+
+    setup_db(&dbpath);
+
+    {
+      let connection = sqlite::open(&dbpath).unwrap();
+      let mut statement = connection.prepare("PRAGMA journal_mode;").unwrap();
+
+      assert_eq!(statement.next().unwrap(), sqlite::State::Row);
+      let mode: String = statement.read(0).unwrap();
+      assert_eq!(mode.to_lowercase(), "wal");
+    }
+
+    let _ = fs::remove_file(&dbpath);
+    let _ = fs::remove_file(format!("{dbpath}-wal"));
+    let _ = fs::remove_file(format!("{dbpath}-shm"));
+  }
 }
